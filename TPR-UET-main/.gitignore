@@ -1,0 +1,3 @@
+*.pyc
+cfg-t4.yml
+*/processor.py
