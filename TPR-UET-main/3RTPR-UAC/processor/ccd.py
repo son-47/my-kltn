@@ -218,7 +218,7 @@ def get_per_sample_loss(args, models, data_loader):
         disagreement = ((Sims_A - Sims_B).abs() / (Sims.max() - Sims.min() + 1e-9)).clamp(0, 1)
     else:
         # Single model: use its confidence, disagreement = 0
-        combined_conf = conf_A.clone()
+        combined_conf = torch.from_numpy(conf_A).clone()
         disagreement = torch.zeros_like(Sims)
 
     if use_uncertainty_aware:
