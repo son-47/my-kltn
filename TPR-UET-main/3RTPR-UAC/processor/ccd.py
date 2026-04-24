@@ -333,8 +333,8 @@ def get_per_sample_loss(args, models, data_loader):
     clean_component_A = gmm_A.means_.argmin()
     conf_A = prob_A[:, clean_component_A]
 
-    gmm_B.fit(combined_B.cpu().numpy())
-    prob_B = gmm_B.predict_proba(combined_B.cpu().numpy())
+    gmm_B.fit(gmm_input_B.cpu().numpy())
+    prob_B = gmm_B.predict_proba(gmm_input_B.cpu().numpy())
     clean_component_B = gmm_B.means_.argmin()
     conf_B = prob_B[:, clean_component_B]
 
@@ -370,6 +370,11 @@ def get_per_sample_loss(args, models, data_loader):
         uacs2_conf = torch.from_numpy(combined_conf).clone() if isinstance(combined_conf, np.ndarray) else combined_conf.clone()
 
     if use_uncertainty_aware:
+        # Ensure conf arrays are torch tensors for downstream processing
+        if isinstance(conf_A, np.ndarray):
+            conf_A = torch.from_numpy(conf_A).float()
+        if isinstance(conf_B, np.ndarray):
+            conf_B = torch.from_numpy(conf_B).float()
         print(f"\t\t\t[UACS] A_clean={pred_A.sum()}, B_clean={pred_B.sum()}, "
               f"conf_mean={combined_conf.mean():.3f}, agree_mean={CrossAgree.mean():.3f}, "
               f"disagree_mean={disagreement.mean():.3f}")
