@@ -76,53 +76,50 @@ def do_train(start_epoch, args, models:List[DATPS], train_loader, evaluator, opt
         #Calculate the corresponsive consensus division before start training for dataset with N-pairs
         if args.ccd.enable and epoch > args.ccd.warmup_epochs :
             result = get_per_sample_loss(args, models if args.ccd.all_model else [random.choice(models)], train_loader)
-            if getattr(args.ccd, 'uncertainty_aware', False):
-                # New: Uncertainty-Aware Multi-Signal CCD returns 7 values
-                pred_A, pred_B, simAB, conf_A, conf_B, combined_conf, disagreement = result
-            else:
-                # Legacy: original 3-return signature for backward compatibility
-                pred_A, pred_B, simAB = result
-                conf_A, conf_B, combined_conf, disagreement = None, None, None, None
 
             use_soft_weighting = getattr(args.ccd, 'uncertainty_aware', False)
+            use_epistemic = getattr(args.ccd, 'use_epistemic', False)
+
+            if use_soft_weighting or use_epistemic:
+                # UACS-2: 11-value return
+                (pred_A, pred_B, simAB, conf_A, conf_B, combined_conf, disagreement,
+                 epistemic_unc, aleatoric_unc, total_uncertainty, uacs2_conf) = result
+            else:
+                # Legacy: 3-value return
+                pred_A, pred_B, simAB = result[:3]
+                conf_A, conf_B, combined_conf, disagreement = None, None, None, None
+                epistemic_unc, aleatoric_unc, total_uncertainty, uacs2_conf = None, None, None, None
 
             if use_soft_weighting:
-                # ===== SOFT CONFIDENCE WEIGHTING =====
-                # Configurable parameters
                 min_weight = getattr(args.ccd, 'ua_min_weight', 0.05)
                 clean_quantile = getattr(args.ccd, 'ua_clean_quantile', 0.8)
 
-                # Combined confidence: REPLACE geometric mean from ccd.py with weighted average
-                # Weighted average: model có confidence cao hơn chiếm trọng số lớn hơn
-                # Ví dụ: conf_A=0.1, conf_B=0.7 → weighted avg = 0.625 (vs geometric 0.265)
-                trust_A = conf_A
-                trust_B = conf_B
-                combined_conf = (conf_A * trust_A + conf_B * trust_B) / (trust_A + trust_B + 1e-8)
+                if use_epistemic and uacs2_conf is not None:
+                    # UACS-2: use epistemic-boosted confidence
+                    soft_conf = uacs2_conf
+                else:
+                    soft_conf = combined_conf
 
-                # Penalize samples where models disagree
-                agreement_bonus = (1 - disagreement * 0.5).clamp(0.5, 1.0)
-                soft_conf = combined_conf * agreement_bonus
-
-                # Super clean set: samples with highest confidence (MUST compute FIRST)
                 super_clean_threshold = torch.quantile(soft_conf, clean_quantile)
                 super_clean_set = torch.where(soft_conf >= super_clean_threshold)[0]
 
-                # Split samples: super-clean vs non-clean
-                # Final weight = totloss_coef only (no squaring)
-                # Super-clean: label_hat=1, weight=1 (học full, y hệt GMM cũ)
-                # Non-clean: label_hat=1, weight=soft_conf (giảm theo confidence, không bình phương)
                 is_super_clean = soft_conf >= super_clean_threshold
                 totloss_coef = torch.where(
                     is_super_clean,
-                    1.0,  # super-clean: full weight like original GMM
-                    soft_conf.clamp(min_weight, 0.9)  # non-clean: soft weight, capped at 0.9
+                    1.0,
+                    soft_conf.clamp(min_weight, 0.9)
                 )
-                label_hat = torch.ones_like(soft_conf)  # all samples learn, weight controlled by totloss_coef
+                label_hat = torch.ones_like(soft_conf)
 
                 print(f"\t\t\t[UACS] Soft weighting: conf_mean={soft_conf.mean():.3f}, "
                       f"super_clean={len(super_clean_set)} (>{super_clean_threshold:.3f}), "
                       f"non_clean={(~is_super_clean).sum()}, "
                       f"weight_range=[{totloss_coef.min():.3f}, {totloss_coef.max():.3f}]")
+
+                if use_epistemic and epistemic_unc is not None:
+                    print(f"\t\t\t[UACS-2] Epistemic: mean={epistemic_unc.mean():.3f}, "
+                          f"Aleatoric: mean={aleatoric_unc.mean():.3f}, "
+                          f"Total: mean={total_uncertainty.mean():.3f}")
 
             else:
                 # ===== ORIGINAL HARD LABEL LOGIC =====

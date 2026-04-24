@@ -122,6 +122,13 @@ if __name__ == '__main__':
     parser.add_argument("--ua-wagree", type=float, default=0.2, help="weight of cross-model agreement signal in multi-signal GMM [0.0-1.0]")
     parser.add_argument("--ua-clean", type=float, default=0.8, help="quantile threshold for super-clean set in uncertainty-aware mode [0.5-0.95]")
     parser.add_argument("--ua-minw", type=float, default=0.05, help="minimum sample weight in uncertainty-aware mode [0.0-0.2]")
+    # UACS-2: Epistemic Uncertainty
+    parser.add_argument("--use-epistemic", action="store_true", help="enable epistemic uncertainty via MC Dropout in CCD")
+    parser.add_argument("--epistemic-alpha", type=float, default=0.3, help="weight of epistemic vs aleatoric uncertainty [0.0-1.0]")
+    parser.add_argument("--mc-samples", type=int, default=5, help="number of MC Dropout samples for epistemic uncertainty")
+    parser.add_argument("--mc-dropout-rate", type=float, default=0.1, help="dropout rate for MC Dropout uncertainty estimation")
+    parser.add_argument("--aleatoric-alpha", type=float, default=0.5, help="alpha for aleatoric uncertainty weighting in loss")
+    parser.add_argument("--unc-temperature", type=float, default=1.0, help="temperature for uncertainty-to-weight conversion")
     parser.add_argument("--ldynamic", action='store_true', help= "enable dynamic model for loss")
     parser.add_argument("--ldynamic-t", type=int, default=0, help= "dynamic model")
     parser.add_argument("--ldynamic-m", type=str, default='min', choices=['min', 'mean', '25', '75', '30'], help= "dynamic model")
@@ -173,6 +180,18 @@ if __name__ == '__main__':
         cfg.ccd.ua_w_agree = args.ua_wagree
         cfg.ccd.ua_clean_quantile = args.ua_clean
         cfg.ccd.ua_min_weight = args.ua_minw
+
+    # UACS-2: Epistemic Uncertainty
+    if args.use_epistemic:
+        print(f"[!!!] USING UACS-2 Epistemic Uncertainty "
+              f"(epistemic_alpha={args.epistemic_alpha}, mc_samples={args.mc_samples}, "
+              f"mc_dropout_rate={args.mc_dropout_rate})")
+        cfg.ccd.use_epistemic = True
+        cfg.ccd.epistemic_alpha = args.epistemic_alpha
+        cfg.image_encoder.n_mc_samples = args.mc_samples
+        cfg.image_encoder.mc_dropout_rate = args.mc_dropout_rate
+        cfg.image_encoder.aleatoric_alpha = args.aleatoric_alpha
+        cfg.losses.unc_temperature = args.unc_temperature
 
     cfg.image_encoder.local_branch.selection_ratio = args.sratio
     if args.sratio>0:

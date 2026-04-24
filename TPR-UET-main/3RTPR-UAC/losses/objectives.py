@@ -174,8 +174,77 @@ def compute_id(image_logits, text_logits, labels):
     Instance loss proposed at http://arxiv.org/abs/1711.05535
     """
     criterion = nn.CrossEntropyLoss(reduction='none').cuda()
-    
+
 
     loss = criterion(image_logits, labels) + criterion(text_logits, labels)
-    return loss 
+    return loss
+
+
+def compute_sdm_uncertainty(t2iscore, pid, logit_scale, aleatoric_unc=None,
+                              epistemic_unc=None, combined_unc=None,
+                              epsilon=1e-8, margin=0, **kwargs):
+    """
+    Uncertainty-Aware Similarity Distribution Matching (UACS-2).
+
+    Extends SDM by weighting each sample's loss based on estimated uncertainty:
+    - High uncertainty → lower weight (model/data uncertain about this sample)
+    - Low uncertainty → higher weight (confident prediction)
+
+    This is inspired by Kendall & Gal (2017) where uncertainty is used to
+    automatically modulate loss contributions.
+
+    Three uncertainty sources:
+    1. Aleatoric: inherent noise in the data (label noise, ambiguity)
+    2. Epistemic: model uncertainty (lack of training data in this region)
+    3. Combined: weighted combination of both
+
+    The weighting scheme:
+    - uncertainty_weight = 1 / (1 + uncertainty)^temperature
+    - This smoothly interpolates between full weight (certain) and reduced weight (uncertain)
+
+    Args:
+        t2iscore: [B, B] cross-modal similarity matrix
+        pid: [B] person IDs
+        logit_scale: scalar temperature for softmax
+        aleatoric_unc: [B] optional aleatoric uncertainty per sample
+        epistemic_unc: [B] optional epistemic uncertainty per sample
+        combined_unc: [B] optional pre-combined uncertainty
+        epsilon: numerical stability
+        margin: margin for positive pairs (from original SDM)
+
+    Returns:
+        uncertainty_weighted_loss: [B] per-sample loss weighted by uncertainty
+    """
+    batch_size = t2iscore.shape[0]
+    pid = pid.reshape((batch_size, 1))
+    pid_dist = pid - pid.t()
+    labels = (pid_dist == 0).float()
+
+    t2iscore = t2iscore - labels * margin
+    text_proj_image = logit_scale * t2iscore
+    image_proj_text = logit_scale * t2iscore.t()
+    labels_distribute = labels / labels.sum(dim=1)
+
+    i2t_loss = F.softmax(image_proj_text, dim=1) * (
+        F.log_softmax(image_proj_text, dim=1) - torch.log(labels_distribute + epsilon))
+    t2i_loss = F.softmax(text_proj_image, dim=1) * (
+        F.log_softmax(text_proj_image, dim=1) - torch.log(labels_distribute + epsilon))
+
+    base_loss = torch.sum(i2t_loss, dim=1) + torch.sum(t2i_loss, dim=1)
+
+    if combined_unc is not None:
+        uncertainty = combined_unc
+    elif aleatoric_unc is not None and epistemic_unc is not None:
+        uncertainty = 0.5 * aleatoric_unc + 0.5 * epistemic_unc
+    elif aleatoric_unc is not None:
+        uncertainty = aleatoric_unc
+    elif epistemic_unc is not None:
+        uncertainty = epistemic_unc
+    else:
+        return base_loss
+
+    temperature = kwargs.get('unc_temperature', 1.0)
+    uncertainty_weight = 1.0 / (1.0 + uncertainty / temperature)
+
+    return base_loss * uncertainty_weight
 

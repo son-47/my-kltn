@@ -16,11 +16,15 @@ image_encoder:
   img_size: [384, 128]
   stride_size: 16
   temperature: 0.02
-  local_branch: 
+  local_branch:
     enable: False
     selection_ratio: 0.5
     crossloss: False
     dim: 512 #256
+  # MC Dropout parameters for epistemic uncertainty (UACS-2)
+  n_mc_samples: 5
+  mc_dropout_rate: 0.1
+  aleatoric_alpha: 0.5
   
 
 resume: False
@@ -69,17 +73,20 @@ dataloader:
 
 
 ccd:
-  enable : False
-  warmup_epochs: 1
+  enable : True
+  warmup_epochs: 2
   dynamic: False
   remakeds: False
   mode   : ''
   # Uncertainty-Aware Multi-Signal CCD (UACS)
-  uncertainty_aware: False
-  ua_w_sim: 0.3       # weight of similarity signal [0.0-1.0]
-  ua_w_agree: 0.2     # weight of cross-model agreement signal [0.0-1.0]
-  ua_clean_quantile: 0.8  # quantile threshold for super-clean set [0.5-0.95]
-  ua_min_weight: 0.05     # minimum sample weight [0.0-0.2]
+  uncertainty_aware: True
+  ua_w_sim: 0.15
+  ua_w_agree: 0.1
+  ua_clean_quantile: 0.8
+  ua_min_weight: 0.1
+  # UACS-2: Epistemic Uncertainty via MC Dropout
+  use_epistemic: False
+  epistemic_alpha: 0.3  # weight of epistemic vs aleatoric (1 = full epistemic, 0 = full aleatoric)
 
 
 losses:
@@ -88,7 +95,8 @@ losses:
   dynamic_muy : mean
   loss_names : ['sdm']
   sdm_loss_weight: 1.0
-    
+  unc_temperature: 1.0
+
   sdm:
     margin: 0
     hardmode: False
