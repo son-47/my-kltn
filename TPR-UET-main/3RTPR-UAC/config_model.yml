@@ -69,17 +69,17 @@ dataloader:
 
 
 ccd:
-  enable : False
-  warmup_epochs: 1
+  enable : True
+  warmup_epochs: 2      # Increased from 1: let models diverge more before CCD kicks in
   dynamic: False
   remakeds: False
   mode   : ''
   # Uncertainty-Aware Multi-Signal CCD (UACS)
-  uncertainty_aware: False
-  ua_w_sim: 0.3       # weight of similarity signal [0.0-1.0]
-  ua_w_agree: 0.2     # weight of cross-model agreement signal [0.0-1.0]
+  uncertainty_aware: True
+  ua_w_sim: 0.15       # Reduced from 0.3: similarity signal is now a post-processing boost
+  ua_w_agree: 0.1      # Reduced from 0.2: agreement signal is now a post-processing boost
   ua_clean_quantile: 0.8  # quantile threshold for super-clean set [0.5-0.95]
-  ua_min_weight: 0.05     # minimum sample weight [0.0-0.2]
+  ua_min_weight: 0.1       # Increased from 0.05: give uncertain samples more learning signal
 
 
 losses:

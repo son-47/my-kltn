@@ -88,20 +88,13 @@ def do_train(start_epoch, args, models:List[DATPS], train_loader, evaluator, opt
 
             if use_soft_weighting:
                 # ===== SOFT CONFIDENCE WEIGHTING =====
-                # Configurable parameters
                 min_weight = getattr(args.ccd, 'ua_min_weight', 0.05)
                 clean_quantile = getattr(args.ccd, 'ua_clean_quantile', 0.8)
 
-                # Combined confidence: REPLACE geometric mean from ccd.py with weighted average
-                # Weighted average: model có confidence cao hơn chiếm trọng số lớn hơn
-                # Ví dụ: conf_A=0.1, conf_B=0.7 → weighted avg = 0.625 (vs geometric 0.265)
-                trust_A = conf_A
-                trust_B = conf_B
-                combined_conf = (conf_A * trust_A + conf_B * trust_B) / (trust_A + trust_B + 1e-8)
-
-                # Penalize samples where models disagree
-                agreement_bonus = (1 - disagreement * 0.5).clamp(0.5, 1.0)
-                soft_conf = combined_conf * agreement_bonus
+                # Use geometric mean directly from ccd.py (not the over-optimistic weighted average).
+                # geometric mean penalizes disagreement: conf_A=0.1, conf_B=0.7 → sqrt(0.07)=0.265
+                # weighted average was too optimistic: (0.01+0.49)/0.8=0.625
+                soft_conf = combined_conf  # already geometric mean from ccd.py + multi-signal boost
 
                 # Super clean set: samples with highest confidence (MUST compute FIRST)
                 super_clean_threshold = torch.quantile(soft_conf, clean_quantile)

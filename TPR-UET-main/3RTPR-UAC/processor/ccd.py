@@ -24,22 +24,34 @@ def _fit_gmm_improved(scores, dataset_name):
             n_components=2,
             max_iter=100,
             tol=1e-4,
-            reg_covar=1e-5,
+            reg_covar=1e-6,          # Match original: 1e-6 (not 1e-5)
             covariance_type='full',
-            n_init=3,
+            n_init=5,                 # Increased from 3 for better convergence
             random_state=42
         )
     else:
         gmm = GaussianMixture(
             n_components=2,
-            max_iter=50,
-            tol=1e-3,
-            reg_covar=1e-4,
+            max_iter=100,             # Match original: was 50
+            tol=1e-4,                # Match original: was 1e-3
+            reg_covar=1e-6,          # Match original: was 1e-4
             covariance_type='full',
-            n_init=3,
+            n_init=5,
             random_state=42
         )
     return gmm
+
+
+def _compute_multisignal_boost(sims_norm, agree_norm, w_sim, w_agree):
+    """Compute multi-signal confidence boost after GMM classification.
+
+    High similarity + high agreement → boost confidence (clean sample)
+    Low similarity + low agreement   → reduce confidence (uncertain/noisy)
+
+    Returns boost factor in [0.5, 1.5].
+    """
+    boost = 1.0 + w_sim * (sims_norm - 0.5) + w_agree * (agree_norm - 0.5)
+    return boost.clamp(0.5, 1.5)
 
 
 def _compute_per_loss_4ccd(args, models: List[DATPS], batch, **kwargs):
@@ -172,40 +184,66 @@ def get_per_sample_loss(args, models, data_loader):
     agree_norm = ((CrossAgree - CrossAgree.min()) / (CrossAgree.max() - CrossAgree.min() + 1e-9)).reshape(-1, 1)
 
     # ===== Signal Weighting =====
-    # Loss weight: high loss -> likely noisy (positive weight)
-    # Similarity weight: high sim -> likely clean (negative contribution)
-    # Agreement weight: high agreement -> confident (negative contribution)
+    # CRITICAL FIX: Always use LOSS-ONLY for GMM fitting (matches original behavior)
+    # The multi-signal boost is applied AS POST-PROCESSING after GMM posteriors,
+    # so high-similarity (clean) samples are not penalized.
     if use_uncertainty_aware:
-        # Weighted combination: loss dominates, sim/agree help disambiguate
-        w_loss = 1.0
-
-        combined_A = (w_loss * lossA_norm
-                     + w_sim * (1 - sims_norm)
-                     + w_agree * (1 - agree_norm))
-        combined_B = (w_loss * lossB_norm
-                     + w_sim * (1 - sims_norm)
-                     + w_agree * (1 - agree_norm))
+        # GMM fit on loss only (original behavior)
+        gmm_input_A = lossA_norm
+        gmm_input_B = lossB_norm
     else:
-        # Original behavior: only loss
-        combined_A = lossA_norm
-        combined_B = lossB_norm
+        gmm_input_A = lossA_norm
+        gmm_input_B = lossB_norm
 
     print('\n\t\t\t===================Fitting Enhanced GMM ...===================')
 
-    # Fit improved GMM
-    gmm_A = _fit_gmm_improved(combined_A.cpu().numpy(), dataset_name)
-    gmm_B = _fit_gmm_improved(combined_B.cpu().numpy(), dataset_name)
+    # Fit GMM using loss-only signal (gmm_input_A/B), not the flawed combined signal
+    gmm_A = _fit_gmm_improved(gmm_input_A.cpu().numpy(), dataset_name)
+    gmm_B = _fit_gmm_improved(gmm_input_B.cpu().numpy(), dataset_name)
 
-    gmm_A.fit(combined_A.cpu().numpy())
-    prob_A = gmm_A.predict_proba(combined_A.cpu().numpy())
+    gmm_A.fit(gmm_input_A.cpu().numpy())
+    prob_A = gmm_A.predict_proba(gmm_input_A.cpu().numpy())
     # component with smaller mean = cleaner class
     clean_component_A = gmm_A.means_.argmin()
     conf_A = prob_A[:, clean_component_A]
 
-    gmm_B.fit(combined_B.cpu().numpy())
-    prob_B = gmm_B.predict_proba(combined_B.cpu().numpy())
+    gmm_B.fit(gmm_input_B.cpu().numpy())
+    prob_B = gmm_B.predict_proba(gmm_input_B.cpu().numpy())
     clean_component_B = gmm_B.means_.argmin()
     conf_B = prob_B[:, clean_component_B]
+
+    # ===== GMM Convergence Check & Fallback =====
+    # If GMM didn't converge or produced degenerate clusters, fall back to percentile-based
+    # confidence. This prevents the training instability seen in early epochs.
+    def _check_gmm_validity(probs, gmm):
+        # Check 1: converged
+        if not gmm.converged_:
+            return False, probs  # still return probs for diagnostic print
+        # Check 2: not all probabilities are near 0 or 1 (degenerate)
+        if probs.mean() < 0.05 or probs.mean() > 0.95:
+            return False, probs
+        # Check 3: sufficient variance (not all samples same confidence)
+        if probs.std() < 0.05:
+            return False, probs
+        return True, probs
+
+    valid_A, conf_A = _check_gmm_validity(conf_A, gmm_A)
+    valid_B, conf_B = _check_gmm_validity(conf_B, gmm_B)
+
+    if not valid_A:
+        print(f"\t\t\t[WARN] GMM-A did not converge or degenerate. "
+              f"converged={gmm_A.converged_}, mean={conf_A.mean():.3f}, std={conf_A.std():.3f}. "
+              f"Falling back to percentile-based confidence.")
+        # Fallback: use loss percentile as confidence (lower loss = higher confidence)
+        conf_A_np = 1.0 - (lossA_norm.cpu().numpy().reshape(-1))
+        conf_A = np.clip(conf_A_np, 0.05, 0.95)
+
+    if not valid_B:
+        print(f"\t\t\t[WARN] GMM-B did not converge or degenerate. "
+              f"converged={gmm_B.converged_}, mean={conf_B.mean():.3f}, std={conf_B.std():.3f}. "
+              f"Falling back to percentile-based confidence.")
+        conf_B_np = 1.0 - (lossB_norm.cpu().numpy().reshape(-1))
+        conf_B = np.clip(conf_B_np, 0.05, 0.95)
 
     # Hard predictions for backward compatibility
     pred_A = _split_prob(conf_A, 0.5)
@@ -221,7 +259,23 @@ def get_per_sample_loss(args, models, data_loader):
         combined_conf = torch.from_numpy(conf_A).clone()
         disagreement = torch.zeros_like(Sims)
 
+    # ===== Multi-Signal Confidence Boosting =====
+    # Apply similarity/agreement signals as a multiplicative boost to GMM posteriors.
+    # High-similarity + high-agreement samples get boosted toward 1.0.
+    # Low-similarity + low-agreement samples get penalized below their GMM confidence.
+    # This is applied AFTER GMM so it doesn't distort the cluster boundaries.
     if use_uncertainty_aware:
+        sims_flat = sims_norm.reshape(-1)
+        agree_flat = agree_norm.reshape(-1)
+        boost = _compute_multisignal_boost(sims_flat, agree_flat, w_sim, w_agree)
+        combined_conf = (combined_conf * boost).clamp(0.0, 1.0)
+
+    if use_uncertainty_aware:
+        # Ensure conf arrays are torch tensors for downstream processing
+        if isinstance(conf_A, np.ndarray):
+            conf_A = torch.from_numpy(conf_A).float()
+        if isinstance(conf_B, np.ndarray):
+            conf_B = torch.from_numpy(conf_B).float()
         print(f"\t\t\t[UACS] A_clean={pred_A.sum()}, B_clean={pred_B.sum()}, "
               f"conf_mean={combined_conf.mean():.3f}, agree_mean={CrossAgree.mean():.3f}, "
               f"disagree_mean={disagreement.mean():.3f}")
