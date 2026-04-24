@@ -1,8 +1,8 @@
 name : AAAIDA
 iocfg:
-  datadir : /data2/cmdir/home/ioit101/Dang_DHCN/projects/person-search/datasets
-  logdir   : /data2/cmdir/home/ioit101/Dang_DHCN/projects/person-search/logs
-  savedir   : /data2/cmdir/home/ioit101/Dang_DHCN/projects/person-search/saves
+  datadir : ./datasets
+  logdir   : ./datasets/logs
+  savedir  : ./datasets/saves
 
 
 text_encoder:
