@@ -71,9 +71,9 @@ for seed in 123  33035  1910 888; do
     --d-names ICFG-PEDES -n hihi  --l-name sdm  --bs 128 --saug-text --erpi 0.5 --erpt 0.2 \
     --ccd --ldynamic  --ldynamic-t 6 --ldynamic-m min --lossweight-sdm 1 --sratio 0.4 --fusedim 5120 
 
-
-  python run.py  --cfg config_model.yml --seed $seed \
+python run.py  --cfg config_model.yml --seed $seed \
     --d-names RSTPReid -n hihi  --l-name sdm  --bs 128 --saug-text --erpi 0.5 --erpt 0.2 \
     --ccd --ldynamic  --ldynamic-t 6 --ldynamic-m min --lossweight-sdm 1 --sratio 0.4 --fusedim 5120 
+  
 
 done
