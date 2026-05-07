@@ -1,0 +1,9 @@
+2026-04-29 07:12:16,620 DANK!1910 INFO: Namespace(cfg='config_model.yml', name='DAUET2001', opt='Adam', output_dir='3RTPR_unc_with_LLM/datasets/saves/ICFG-PEDES/20260428_112458_hihi_8945', test=True, l_names=[], lossweight_sdm=0.0, sampler='random', d_names='ICFG-PEDES', isize=[384, 128], tlen=77, bs=16, seed=1, saug_text=False, lr=1e-05, lrx=0.1, sratio=0.4, erpi=0.5, erpt=0.2, fusedim=5120, single=False, ccd=False, ccd_r=False, ccd_a=False, ccd_tiebreak='random', ldynamic=True, ldynamic_t=2, ldynamic_m='min', uncertainty=False, uncertainty_tau=0.1, uncertainty_alpha=0.5, noisy_rate=0.0, noisy_file='./noiseindex/_0.npy', use_augmented=False, aug_ratio=0.2, annotation_dir=None, dev=False)
+2026-04-29 07:12:16,621 DANK!1910.dataset INFO: Dataset ICFG-PEDES: root=./datasets img_dir=./datasets/ICFG-PEDES/imgs/ anno_path=./datasets/ICFG-PEDES/ICFG-PEDES.json use_augmented=False
+2026-04-29 07:12:16,962 DANK!1910.dataset INFO: Annotation source: combined file (split by 'split' field)
+2026-04-29 07:12:16,963 DANK!1910.dataset INFO: Annotation counts: train=34674 val=0 test=19848
+2026-04-29 07:12:16,963 DANK!1910.dataset INFO: Validation split is empty; val_dataset=val will yield an empty loader
+2026-04-29 07:12:17,385 DANK!1910.dataset INFO: => ICFG-PEDES Images and Captions are loaded
+2026-04-29 07:12:17,385 DANK!1910.dataset INFO: ICFGPEDES Dataset statistics:
+2026-04-29 07:12:17,385 DANK!1910.dataset INFO: Build dataloader: dataset=ICFG-PEDES root=./datasets annotation_dir=None use_augmented=False aug_ratio=0.200
+2026-04-29 07:12:17,385 DANK!1910.dataset INFO: ICFG-PEDES has  3102 classes

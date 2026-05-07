@@ -1,0 +1,12 @@
+# Chặn toàn bộ trong datasets
+3RTPR_unc_with_LLM/datasets/*
+
+# Ngoại lệ: Chỉ lấy các file .py
+!3RTPR_unc_with_LLM/datasets/**/*.py
+
+# Chặn thêm các file nặng thường gặp nếu có
+*.pth
+*.log
+*.npy
+*.zip
+__pycache__/
